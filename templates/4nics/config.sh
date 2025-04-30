@@ -8,8 +8,8 @@ ext_net=10.0.1.0/24
 int_net=10.0.2.0/24
 ha_net=10.0.3.0/24
 mgmt_net=10.0.4.0/24
-publisher=Canonical
-offer=0001-com-ubuntu-pro-microsoft
-sku=24_04-gen2
+publisher=MicrosoftCBLMariner
+offer=cbl-mariner
+sku=cbl-mariner-2-gen2
 version=latest
 
