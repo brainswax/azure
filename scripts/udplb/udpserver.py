@@ -1,9 +1,11 @@
+#! /usr/bin/env python3
 import socketserver
 import threading
 
 # Configuration
 PORTS = [5000, 5001, 5002]  # List of ports to listen on
-FILE_PATH = "response.txt"  # Replace with your file path
+FILE_PATH = "response.txt"  # Set to None or "" to use default message
+DEFAULT_RESPONSE = "No file specified, this is the default response."
 
 class UDPHandler(socketserver.BaseRequestHandler):
     def handle(self):
@@ -18,7 +20,7 @@ class UDPHandler(socketserver.BaseRequestHandler):
             received_string = data.decode('utf-8')
         except UnicodeDecodeError:
             received_string = "<non-UTF-8 data>"
-        
+
         # Log details: source IP/port, destination IP/port, and client message
         log_message = (
             f"Received from {client_address[0]}:{client_address[1]} "
@@ -27,17 +29,22 @@ class UDPHandler(socketserver.BaseRequestHandler):
         print(log_message)
 
         try:
-            # Read the file content
-            with open(FILE_PATH, 'r') as file:
-                file_content = file.read()
+            # Check if FILE_PATH is specified and exists
+            if FILE_PATH:
+                try:
+                    with open(FILE_PATH, 'r') as file:
+                        response = file.read()
+                except FileNotFoundError:
+                    response = f"Error: File {FILE_PATH} not found"
+                except Exception as e:
+                    response = f"Error reading file: {str(e)}"
+            else:
+                # Use default response if no file is specified
+                response = DEFAULT_RESPONSE
 
-            # Send file content back to client
-            socket.sendto(file_content.encode('utf-8'), client_address)
-            print(f"Sent file content to {client_address[0]}:{client_address[1]} on port {server_address[1]}")
-        except FileNotFoundError:
-            error_msg = f"Error: File {FILE_PATH} not found"
-            socket.sendto(error_msg.encode('utf-8'), client_address)
-            print(f"Sent error to {client_address[0]}:{client_address[1]} on port {server_address[1]}: {error_msg}")
+            # Send response back to client
+            socket.sendto(response.encode('utf-8'), client_address)
+            print(f"Sent response to {client_address[0]}:{client_address[1]} on port {server_address[1]}")
         except Exception as e:
             error_msg = f"Error: {str(e)}"
             socket.sendto(error_msg.encode('utf-8'), client_address)
@@ -46,7 +53,7 @@ class UDPHandler(socketserver.BaseRequestHandler):
 if __name__ == "__main__":
     # List to hold server instances
     servers = []
-    
+
     # Create a ThreadingUDPServer for each port
     for port in PORTS:
         try:
@@ -70,4 +77,3 @@ if __name__ == "__main__":
         for server in servers:
             server.shutdown()
             server.server_close()
-
