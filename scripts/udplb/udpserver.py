@@ -3,9 +3,7 @@ import socketserver
 import threading
 
 # Configuration
-PORTS=[9000, 9001, 9002]  # List of ports to listen on
-FILE_PATH="response.txt"  # Set to None or "" to use default message
-DEFAULT_RESPONSE="No file specified, this is the default response."
+PORTS=[9000, 9001, 9002]
 
 class UDPHandler(socketserver.BaseRequestHandler):
     def handle(self):
@@ -25,22 +23,18 @@ class UDPHandler(socketserver.BaseRequestHandler):
         log_message = (
             f"Received from {client_address[0]}:{client_address[1]} "
             f"to {server_address[0]}:{server_address[1]}: {received_string}"
+            f"Message: {received_string}"
         )
         print(log_message)
 
         try:
-            # Check if FILE_PATH is specified and exists
-            if FILE_PATH:
-                try:
-                    with open(FILE_PATH, 'r') as file:
-                        response = file.read()
-                except FileNotFoundError:
-                    response = f"Error: File {FILE_PATH} not found"
-                except Exception as e:
-                    response = f"Error reading file: {str(e)}"
-            else:
-                # Use default response if no file is specified
-                response = DEFAULT_RESPONSE
+            # Create response with source and destination details
+            response = (
+                f"Source: {client_address[0]}:{client_address[1]}, "
+                f"Destination: {server_address[0]}:{server_address[1]}, "
+                f"Message: {received_string}"
+                f"\n"
+            )
 
             # Send response back to client
             socket.sendto(response.encode('utf-8'), client_address)
