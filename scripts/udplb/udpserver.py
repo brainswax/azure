@@ -3,9 +3,9 @@ import socketserver
 import threading
 
 # Configuration
-PORTS = [5000, 5001, 5002]  # List of ports to listen on
-FILE_PATH = "response.txt"  # Set to None or "" to use default message
-DEFAULT_RESPONSE = "No file specified, this is the default response."
+PORTS = [int(port) for port in os.getenv('UDP_PORTS', '5000,5001,5002').split(',')]  # Default: 5000,5001,5002
+FILE_PATH = os.getenv('FILE_PATH', '')  # Default: empty string (uses default response)
+DEFAULT_RESPONSE = os.getenv('DEFAULT_RESPONSE', 'No file specified, this is the default response.')
 
 class UDPHandler(socketserver.BaseRequestHandler):
     def handle(self):
