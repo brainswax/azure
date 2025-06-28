@@ -1,9 +1,11 @@
 #! /usr/bin/env python3
 import socketserver
 import threading
+import socket
 
 # Configuration
 PORTS=[9000, 9001, 9002]
+HOSTNAME = socket.gethostname()  # Get the hostname once at startup
 
 class UDPHandler(socketserver.BaseRequestHandler):
     def handle(self):
@@ -32,6 +34,7 @@ class UDPHandler(socketserver.BaseRequestHandler):
             response = (
                 f"Source: {client_address[0]}:{client_address[1]}, "
                 f"Destination: {server_address[0]}:{server_address[1]}, "
+                f"Hostname: {HOSTNAME}, "
                 f"Message: {received_string}"
                 f"\n"
             )
