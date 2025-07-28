@@ -3,6 +3,8 @@ import socket
 import sys
 import argparse
 import time
+import datetime
+import os
 
 def main():
     # Set up argument parser
@@ -15,6 +17,8 @@ def main():
                        help="Number of UDP messages to send (0 for indefinite, default: 1)")
     parser.add_argument("-i", "--interval", type=int, default=1000,
                        help="Interval between messages in milliseconds (default: 1000)")
+    parser.add_argument("-l", "--logfile", nargs='?', const="udpcat.log",
+                       help="File to log responses with timestamps (default: udpcat.log)")
 
     # Parse arguments
     args = parser.parse_args()
@@ -23,6 +27,7 @@ def main():
     timeout = args.timeout / 1000.0  # Convert milliseconds to seconds
     count = args.count
     interval = args.interval / 1000.0  # Convert milliseconds to seconds
+    logfile = args.logfile  # None if -l not specified, else udpcat.log or user-specified file
 
     # Read message from standard input, use empty string if none provided
     input_message = sys.stdin.read().strip() if not sys.stdin.isatty() else ""
@@ -53,19 +58,51 @@ def main():
                 data, addr = sock.recvfrom(1024)  # Buffer size of 1024 bytes
                 response = data.decode('utf-8')
                 print(response)  # Print response to stdout
+                # Log response with timestamp to file if logfile is specified
+                if logfile:
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                    log_entry = f"[{timestamp}] Received from {addr[0]}:{addr[1]}: {response}\n"
+                    with open(logfile, 'a') as f:
+                        f.write(log_entry)
             except socket.timeout:
-                print(f"No response received within {args.timeout}ms", file=sys.stderr)
+                error_msg = f"No response received within {args.timeout}ms"
+                print(error_msg, file=sys.stderr)
+                # Log timeout with timestamp if logfile is specified
+                if logfile:
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                    log_entry = f"[{timestamp}] {error_msg}\n"
+                    with open(logfile, 'a') as f:
+                        f.write(log_entry)
             except socket.error as e:
-                print(f"Error receiving response: {e}", file=sys.stderr)
+                error_msg = f"Error receiving response: {e}"
+                print(error_msg, file=sys.stderr)
+                # Log error with timestamp if logfile is specified
+                if logfile:
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                    log_entry = f"[{timestamp}] {error_msg}\n"
+                    with open(logfile, 'a') as f:
+                        f.write(log_entry)
 
             sent_count += 1
             if count == 0 or sent_count < count:
                 time.sleep(interval)  # Wait before sending next message
         except socket.error as e:
             print(f"Error sending message: {e}", file=sys.stderr)
+            # Log send error with timestamp if logfile is specified
+            if logfile:
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                log_entry = f"[{timestamp}] Error sending message to {host}:{port}: {e}\n"
+                with open(logfile, 'a') as f:
+                    f.write(log_entry)
             break
         except KeyboardInterrupt:
             print("\nStopped by user", file=sys.stderr)
+            # Log interrupt with timestamp if logfile is specified
+            if logfile:
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                log_entry = f"[{timestamp}] Stopped by user\n"
+                with open(logfile, 'a') as f:
+                    f.write(log_entry)
             break
 
     sock.close()
