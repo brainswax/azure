@@ -5,11 +5,13 @@ import argparse
 import time
 import datetime
 import os
+import select
 
-def create_socket():
-    """Create and bind a UDP socket without a timeout."""
+def create_socket(blocking):
+    """Create and bind a UDP socket, set to blocking or non-blocking."""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setblocking(blocking)  # Set blocking or non-blocking mode
         # Bind to a random available local port
         sock.bind(('0.0.0.0', 0))
         local_port = sock.getsockname()[1]  # Get the assigned local port
@@ -23,80 +25,115 @@ def main():
     parser = argparse.ArgumentParser(description="UDP client similar to netcat")
     parser.add_argument("host", help="Server IP address or hostname")
     parser.add_argument("port", type=int, help="Server port number")
-    parser.add_argument("-w", "--timeout", type=int,
-                       help="Timeout in milliseconds for receiving response (default: no timeout)")
+    parser.add_argument("-w", "--timeout", type=int, default=1000,
+                       help="Timeout in milliseconds for receiving response (0 for no timeout, default: 1000)")
     parser.add_argument("-c", "--count", type=int, default=1,
                        help="Number of UDP messages to send (0 for indefinite, default: 1)")
     parser.add_argument("-i", "--interval", type=int, default=1000,
                        help="Interval between messages in milliseconds (default: 1000)")
     parser.add_argument("-l", "--logfile", nargs='?', const="udpcat.log",
                        help="File to log responses with timestamps (default: udpcat.log)")
+    parser.add_argument("-b", "--blocking", action="store_true",
+                       help="Use blocking socket mode (default: non-blocking)")
 
     # Parse arguments
     args = parser.parse_args()
     host = args.host
     port = args.port
-    timeout = args.timeout / 1000.0 if args.timeout is not None else None  # Convert ms to s or None
+    timeout = None if args.timeout == 0 else args.timeout / 1000.0  # 0 means no timeout, else ms to s
     count = args.count
     interval = args.interval / 1000.0  # Convert milliseconds to seconds
     logfile = args.logfile
+    blocking = args.blocking
 
     # Read message from standard input, use empty string if none provided
     input_message = sys.stdin.read().strip() if not sys.stdin.isatty() else ""
 
     # Create UDP socket
-    sock, local_port = create_socket()
-
-    # Set timeout only if specified
-    if timeout is not None:
-        sock.settimeout(timeout)
+    sock, local_port = create_socket(blocking)
 
     # Send messages
     sent_count = 0
+    last_send_time = time.time()
     while count == 0 or sent_count < count:
         try:
-            # Use input_message if provided, otherwise use the current counter (starting from 1)
-            message = input_message if input_message else str(sent_count + 1)
-            # Send message to server
-            sock.sendto(message.encode('utf-8'), (host, port))
-            print(f"Sent message to {host}:{port} from 0.0.0.0:{local_port}: {message}")
+            # Check if it's time to send the next message
+            current_time = time.time()
+            if current_time - last_send_time >= interval:
+                # Use input_message if provided, otherwise use the current counter (starting from 1)
+                message = input_message if input_message else str(sent_count + 1)
+                # Send message to server
+                sock.sendto(message.encode('utf-8'), (host, port))
+                print(f"Sent message to {host}:{port} from 0.0.0.0:{local_port}: {message}")
+                sent_count += 1
+                last_send_time = current_time
 
-            # Wait for response
-            try:
-                data, addr = sock.recvfrom(1024)  # Buffer size of 1024 bytes
-                response = data.decode('utf-8')
-                print(response)  # Print response to stdout
-                # Log response with timestamp to file if logfile is specified
-                if logfile:
-                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                    log_entry = f"[{timestamp}] Received from {addr[0]}:{addr[1]}: {response}\n"
-                    with open(logfile, 'a') as f:
-                        f.write(log_entry)
-            except socket.timeout:
-                error_msg = f"No response received within {args.timeout}ms"
-                print(error_msg, file=sys.stderr)
-                # Log timeout with timestamp if logfile is specified
-                if logfile:
-                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                    log_entry = f"[{timestamp}] {error_msg}\n"
-                    with open(logfile, 'a') as f:
-                        f.write(log_entry)
-            except socket.error as e:
-                error_msg = f"Error receiving response: {e}"
-                print(error_msg, file=sys.stderr)
-                # Log error with timestamp if logfile is specified
-                if logfile:
-                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                    log_entry = f"[{timestamp}] {error_msg}\n"
-                    with open(logfile, 'a') as f:
-                        f.write(log_entry)
+            # Check for response
+            if blocking:
+                # Blocking mode: use recvfrom with timeout (if set)
+                if timeout is not None:
+                    sock.settimeout(timeout)
+                try:
+                    data, addr = sock.recvfrom(1024)  # Buffer size of 1024 bytes
+                    response = data.decode('utf-8')
+                    print(response)  # Print response to stdout
+                    if logfile:
+                        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                        log_entry = f"[{timestamp}] Received from {addr[0]}:{addr[1]}: {response}\n"
+                        with open(logfile, 'a') as f:
+                            f.write(log_entry)
+                except socket.timeout:
+                    error_msg = f"No response received within {args.timeout}ms"
+                    print(error_msg, file=sys.stderr)
+                    if logfile:
+                        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                        log_entry = f"[{timestamp}] {error_msg}\n"
+                        with open(logfile, 'a') as f:
+                            f.write(log_entry)
+                except socket.error as e:
+                    error_msg = f"Error receiving response: {e}"
+                    print(error_msg, file=sys.stderr)
+                    if logfile:
+                        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                        log_entry = f"[{timestamp}] {error_msg}\n"
+                        with open(logfile, 'a') as f:
+                            f.write(log_entry)
+            else:
+                # Non-blocking mode: use select to check for data
+                readable, _, _ = select.select([sock], [], [], timeout or 0)
+                if sock in readable:
+                    try:
+                        data, addr = sock.recvfrom(1024)  # Buffer size of 1024 bytes
+                        response = data.decode('utf-8')
+                        print(response)  # Print response to stdout
+                        if logfile:
+                            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                            log_entry = f"[{timestamp}] Received from {addr[0]}:{addr[1]}: {response}\n"
+                            with open(logfile, 'a') as f:
+                                f.write(log_entry)
+                    except socket.error as e:
+                        error_msg = f"Error receiving response: {e}"
+                        print(error_msg, file=sys.stderr)
+                        if logfile:
+                            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                            log_entry = f"[{timestamp}] {error_msg}\n"
+                            with open(logfile, 'a') as f:
+                                f.write(log_entry)
+                elif timeout is not None:
+                    # Log timeout only if a timeout was specified
+                    error_msg = f"No response received within {args.timeout}ms"
+                    print(error_msg, file=sys.stderr)
+                    if logfile:
+                        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                        log_entry = f"[{timestamp}] {error_msg}\n"
+                        with open(logfile, 'a') as f:
+                            f.write(log_entry)
 
-            sent_count += 1
-            if count == 0 or sent_count < count:
-                time.sleep(interval)  # Wait before sending next message
+            # Avoid busy looping in non-blocking mode
+            if (count == 0 or sent_count < count) and not blocking:
+                time.sleep(min(interval / 10, 0.01))  # Brief sleep to reduce CPU usage
         except socket.error as e:
             print(f"Error sending message: {e}", file=sys.stderr)
-            # Log send error with timestamp if logfile is specified
             if logfile:
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
                 log_entry = f"[{timestamp}] Error sending message to {host}:{port}: {e}\n"
@@ -105,7 +142,6 @@ def main():
             break
         except KeyboardInterrupt:
             print("\nStopped by user", file=sys.stderr)
-            # Log interrupt with timestamp if logfile is specified
             if logfile:
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
                 log_entry = f"[{timestamp}] Stopped by user\n"
