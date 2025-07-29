@@ -119,8 +119,8 @@ def main():
                             log_entry = f"[{timestamp}] {error_msg}\n"
                             with open(logfile, 'a') as f:
                                 f.write(log_entry)
-                elif timeout is not None:
-                    # Log timeout only if a timeout was specified
+                elif timeout is not None and readable == []:
+                    # Log timeout only if no data was available and timeout was specified
                     error_msg = f"No response received within {args.timeout}ms"
                     print(error_msg, file=sys.stderr)
                     if logfile:
