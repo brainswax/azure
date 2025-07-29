@@ -6,13 +6,25 @@ import time
 import datetime
 import os
 
+def create_socket():
+    """Create and bind a UDP socket without a timeout."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Bind to a random available local port
+        sock.bind(('0.0.0.0', 0))
+        local_port = sock.getsockname()[1]  # Get the assigned local port
+        return sock, local_port
+    except socket.error as e:
+        print(f"Error creating socket: {e}", file=sys.stderr)
+        sys.exit(1)
+
 def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description="UDP client similar to netcat")
     parser.add_argument("host", help="Server IP address or hostname")
     parser.add_argument("port", type=int, help="Server port number")
-    parser.add_argument("-w", "--timeout", type=int, default=1000,
-                       help="Timeout in milliseconds for receiving response (default: 1000)")
+    parser.add_argument("-w", "--timeout", type=int,
+                       help="Timeout in milliseconds for receiving response (default: no timeout)")
     parser.add_argument("-c", "--count", type=int, default=1,
                        help="Number of UDP messages to send (0 for indefinite, default: 1)")
     parser.add_argument("-i", "--interval", type=int, default=1000,
@@ -24,24 +36,20 @@ def main():
     args = parser.parse_args()
     host = args.host
     port = args.port
-    timeout = args.timeout / 1000.0  # Convert milliseconds to seconds
+    timeout = args.timeout / 1000.0 if args.timeout is not None else None  # Convert ms to s or None
     count = args.count
     interval = args.interval / 1000.0  # Convert milliseconds to seconds
-    logfile = args.logfile  # None if -l not specified, else udpcat.log or user-specified file
+    logfile = args.logfile
 
     # Read message from standard input, use empty string if none provided
     input_message = sys.stdin.read().strip() if not sys.stdin.isatty() else ""
 
     # Create UDP socket
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.settimeout(timeout)  # Set timeout for receiving response
-        # Bind to a random available local port to maintain the same source port
-        sock.bind(('0.0.0.0', 0))
-        local_port = sock.getsockname()[1]  # Get the assigned local port
-    except socket.error as e:
-        print(f"Error creating socket: {e}", file=sys.stderr)
-        sys.exit(1)
+    sock, local_port = create_socket()
+
+    # Set timeout only if specified
+    if timeout is not None:
+        sock.settimeout(timeout)
 
     # Send messages
     sent_count = 0
