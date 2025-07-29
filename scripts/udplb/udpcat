@@ -55,6 +55,7 @@ def main():
     # Send messages
     sent_count = 0
     last_send_time = time.time()
+    response_expected = False  # Track if a response is expected for the current message
     while count == 0 or sent_count < count:
         try:
             # Check if it's time to send the next message
@@ -67,6 +68,7 @@ def main():
                 print(f"Sent message to {host}:{port} from 0.0.0.0:{local_port}: {message}")
                 sent_count += 1
                 last_send_time = current_time
+                response_expected = True  # Expect a response for this message
 
             # Check for response
             if blocking:
@@ -82,6 +84,7 @@ def main():
                         log_entry = f"[{timestamp}] Received from {addr[0]}:{addr[1]}: {response}\n"
                         with open(logfile, 'a') as f:
                             f.write(log_entry)
+                    response_expected = False  # Response received
                 except socket.timeout:
                     error_msg = f"No response received within {args.timeout}ms"
                     print(error_msg, file=sys.stderr)
@@ -90,6 +93,7 @@ def main():
                         log_entry = f"[{timestamp}] {error_msg}\n"
                         with open(logfile, 'a') as f:
                             f.write(log_entry)
+                    response_expected = False  # Timeout handled
                 except socket.error as e:
                     error_msg = f"Error receiving response: {e}"
                     print(error_msg, file=sys.stderr)
@@ -98,36 +102,40 @@ def main():
                         log_entry = f"[{timestamp}] {error_msg}\n"
                         with open(logfile, 'a') as f:
                             f.write(log_entry)
+                    response_expected = False  # Error handled
             else:
                 # Non-blocking mode: use select to check for data
-                readable, _, _ = select.select([sock], [], [], timeout or 0)
-                if sock in readable:
-                    try:
-                        data, addr = sock.recvfrom(1024)  # Buffer size of 1024 bytes
-                        response = data.decode('utf-8')
-                        print(response)  # Print response to stdout
-                        if logfile:
-                            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                            log_entry = f"[{timestamp}] Received from {addr[0]}:{addr[1]}: {response}\n"
-                            with open(logfile, 'a') as f:
-                                f.write(log_entry)
-                    except socket.error as e:
-                        error_msg = f"Error receiving response: {e}"
+                if response_expected:
+                    readable, _, _ = select.select([sock], [], [], timeout or 0)
+                    if sock in readable:
+                        try:
+                            data, addr = sock.recvfrom(1024)  # Buffer size of 1024 bytes
+                            response = data.decode('utf-8')
+                            print(response)  # Print response to stdout
+                            if logfile:
+                                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                                log_entry = f"[{timestamp}] Received from {addr[0]}:{addr[1]}: {response}\n"
+                                with open(logfile, 'a') as f:
+                                    f.write(log_entry)
+                            response_expected = False  # Response received
+                        except socket.error as e:
+                            error_msg = f"Error receiving response: {e}"
+                            print(error_msg, file=sys.stderr)
+                            if logfile:
+                                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                                log_entry = f"[{timestamp}] {error_msg}\n"
+                                with open(logfile, 'a') as f:
+                                    f.write(log_entry)
+                            response_expected = False  # Error handled
+                    elif timeout is not None and readable == []:
+                        error_msg = f"No response received within {args.timeout}ms"
                         print(error_msg, file=sys.stderr)
                         if logfile:
                             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
                             log_entry = f"[{timestamp}] {error_msg}\n"
                             with open(logfile, 'a') as f:
                                 f.write(log_entry)
-                elif timeout is not None and readable == []:
-                    # Log timeout only if no data was available and timeout was specified
-                    error_msg = f"No response received within {args.timeout}ms"
-                    print(error_msg, file=sys.stderr)
-                    if logfile:
-                        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                        log_entry = f"[{timestamp}] {error_msg}\n"
-                        with open(logfile, 'a') as f:
-                            f.write(log_entry)
+                        response_expected = False  # Timeout handled
 
             # Avoid busy looping in non-blocking mode
             if (count == 0 or sent_count < count) and not blocking:
